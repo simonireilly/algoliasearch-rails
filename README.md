@@ -43,6 +43,7 @@ You can find the full reference on [Algolia's website](https://www.algolia.com/d
     * [Auto-indexing &amp; asynchronism](#auto-indexing--asynchronism)
     * [Custom index name](#custom-index-name)
     * [Per-environment indices](#per-environment-indices)
+    * [Per-tenant indices](#per-tenant-indices)
     * [Custom attribute definition](#custom-attribute-definition)
     * [Nested objects/relations](#nested-objectsrelations)
     * [Custom <code>objectID</code>](#custom-codeobjectidcode)
@@ -608,6 +609,20 @@ class Contact < ActiveRecord::Base
   end
 end
 ```
+
+
+## Per-tenant indices
+
+You can affix the index name with the current tenant from your application using:
+
+```ruby
+class Contact < ActiveRecord::Base
+  include AlgoliaSearch
+
+  algoliasearch per_tenant: Proc.new { Apartment.current_tenant } do # index name will be "#{Apartment.current_tenant}_Contact"
+    attribute :first_name, :last_name, :email
+  end
+end
 
 ## Custom attribute definition
 
