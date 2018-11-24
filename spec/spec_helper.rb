@@ -28,7 +28,7 @@ RSpec.configure do |c|
   end
 
   c.after(:suite) do
-    indices = Algolia.client.list_indexes.dig('items').sort_by { |index| index["primary"] || "" }
+    indices = Algolia.client.list_indexes()['items'].sort_by { |index| index["primary"] || "" }
     indices.each do |index|
       Algolia.client.delete_index!(index['name'])
     end
