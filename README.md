@@ -619,10 +619,12 @@ You can affix the index name with the current tenant from your application using
 class Contact < ActiveRecord::Base
   include AlgoliaSearch
 
-  algoliasearch per_tenant: Proc.new { Apartment.current_tenant } do # index name will be "#{Apartment.current_tenant}_Contact"
+  algoliasearch per_tenant: Proc.new { Apartment.current_tenant } do
+  # index name will be "#{Apartment.current_tenant}_Contact"
     attribute :first_name, :last_name, :email
   end
 end
+```
 
 ## Custom attribute definition
 
