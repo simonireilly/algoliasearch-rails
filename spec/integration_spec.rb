@@ -82,6 +82,12 @@ ActiveRecord::Schema.define do
     t.boolean :premium
     t.boolean :released
   end
+  create_table :multi_tenanted_books do |t|
+    t.string :name
+    t.string :author
+    t.boolean :premium
+    t.boolean :released
+  end
   create_table :disabled_booleans do |t|
     t.string :name
   end
@@ -353,6 +359,32 @@ class Book < ActiveRecord::Base
     end
 
     add_index safe_index_name('Book'), :per_environment => true, :if => :public? do
+      attributesToIndex [:name]
+    end
+  end
+
+  private
+  def public?
+    released && !premium
+  end
+end
+
+class MultiTenantedBook < ActiveRecord::Base
+  include AlgoliaSearch
+
+  algoliasearch :synchronous => true, :index_name => safe_index_name("SecuredBook"),
+    :per_environment => true, :sanitize => true, per_tenant: Proc.new { "amazon" } do
+
+    attributesToIndex [:name]
+    tags do
+      [premium ? 'premium' : 'standard', released ? 'public' : 'private']
+    end
+
+    add_index safe_index_name('BookAuthor'), :per_environment => true, per_tenant: Proc.new { "amazon" } do
+      attributesToIndex [:author]
+    end
+
+    add_index safe_index_name('Book'), :per_environment => true, per_tenant: Proc.new { "amazon" }, :if => :public? do
       attributesToIndex [:name]
     end
   end
@@ -1263,5 +1295,92 @@ describe 'Misconfigured Block' do
     expect {
       MisconfiguredBlock.reindex
     }.to raise_error(ArgumentError)
+  end
+end
+
+describe 'Per-Tenant options' do
+  after(:each) do
+    MultiTenantedBook.algoliasearch_options[:per_tenant] = Proc.new { "amazon" }
+  end
+
+  it "should preffix the index with the evaluated Proc" do
+    # First tenant is amazon
+    expect(MultiTenantedBook.index_name).to eq("amazon_SecuredBook_development")
+    # Next tenant is apple
+    MultiTenantedBook.algoliasearch_options[:per_tenant] = Proc.new { "apple" }
+    expect(MultiTenantedBook.index_name).to eq("apple_SecuredBook_development")
+  end
+end
+
+describe 'MultiTenantedBook' do
+  before(:all) do
+    MultiTenantedBook.clear_index!(true)
+    MultiTenantedBook.index(safe_index_name('BookAuthor')).clear
+    MultiTenantedBook.index(safe_index_name('Book')).clear
+  end
+
+  it "should index the book in 2 indexes of 3" do
+    @steve_jobs = MultiTenantedBook.create! :name => 'Steve Jobs', :author => 'Walter Isaacson', :premium => true, :released => true
+    results = MultiTenantedBook.search('steve')
+    expect(results.size).to eq(1)
+    results.should include(@steve_jobs)
+
+    index_author = MultiTenantedBook.index(safe_index_name('BookAuthor'))
+    index_author.should_not be_nil
+    results = index_author.search('steve')
+    results['hits'].length.should eq(0)
+    results = index_author.search('walter')
+    results['hits'].length.should eq(1)
+
+    # premium -> not part of the public index
+    index_book = MultiTenantedBook.index(safe_index_name('Book'))
+    index_book.should_not be_nil
+    results = index_book.search('steve')
+    results['hits'].length.should eq(0)
+  end
+
+  it "should sanitize attributes" do
+    @hack = MultiTenantedBook.create! :name => "\"><img src=x onerror=alert(1)> hack0r", :author => "<script type=\"text/javascript\">alert(1)</script>", :premium => true, :released => true
+    b = MultiTenantedBook.raw_search('hack')
+    expect(b['hits'].length).to eq(1)
+    begin
+      expect(b['hits'][0]['name']).to eq('"> hack0r')
+      expect(b['hits'][0]['author']).to eq('alert(1)')
+      expect(b['hits'][0]['_highlightResult']['name']['value']).to eq('"> <em>hack</em>0r')
+    rescue
+      # rails 4.2's sanitizer
+      begin
+        expect(b['hits'][0]['name']).to eq('&quot;&gt; hack0r')
+        expect(b['hits'][0]['author']).to eq('')
+        expect(b['hits'][0]['_highlightResult']['name']['value']).to eq('&quot;&gt; <em>hack</em>0r')
+      rescue
+        # jruby
+        expect(b['hits'][0]['name']).to eq('"&gt; hack0r')
+        expect(b['hits'][0]['author']).to eq('')
+        expect(b['hits'][0]['_highlightResult']['name']['value']).to eq('"&gt; <em>hack</em>0r')
+      end
+    end
+  end
+
+  it "should handle removal in an extra index" do
+    # add a new public book which (not premium but released)
+    book = MultiTenantedBook.create! :name => 'Public book', :author => 'me', :premium => false, :released => true
+
+    # should be searchable in the 'Book' index
+    index = MultiTenantedBook.index(safe_index_name('Book'))
+    results = index.search('Public book')
+    expect(results['hits'].size).to eq(1)
+
+    # update the book and make it non-public anymore (not premium, not released)
+    book.update_attributes :released => false
+
+    # should be removed from the index
+    results = index.search('Public book')
+    expect(results['hits'].size).to eq(0)
+  end
+
+  it "should use the per_environment option in the additional index as well" do
+    index = MultiTenantedBook.index(safe_index_name('Book'))
+    expect(index.name).to eq("#{MultiTenantedBook.algoliasearch_options[:per_tenant].call}_#{safe_index_name('Book')}_#{Rails.env}")
   end
 end
