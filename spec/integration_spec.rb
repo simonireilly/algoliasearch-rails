@@ -1299,6 +1299,10 @@ describe 'Misconfigured Block' do
 end
 
 describe 'Per-Tenant options' do
+  after(:each) do
+    MultiTenantedBook.algoliasearch_options[:per_tenant] = Proc.new { "amazon" }
+  end
+
   it "should preffix the index with the evaluated Proc" do
     # First tenant is amazon
     expect(MultiTenantedBook.index_name).to eq("amazon_SecuredBook_development")
@@ -1312,7 +1316,6 @@ describe 'MultiTenantedBook' do
   before(:all) do
     MultiTenantedBook.clear_index!(true)
     MultiTenantedBook.index(safe_index_name('BookAuthor')).clear
-    puts MultiTenantedBook.index(safe_index_name('BookAuthor')).index_name
     MultiTenantedBook.index(safe_index_name('Book')).clear
   end
 
