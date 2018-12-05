@@ -27,17 +27,25 @@ RSpec.configure do |c|
     }
   end
 
+  # Remove all indexes setup in this run in local or CI
   c.after(:suite) do
-    indices = Algolia.client.list_indexes()['items'].sort_by { |index| index["primary"] || "" }
-    indices.each do |index|
+    safe_index_list.each do |index|
       Algolia.client.delete_index!(index['name'])
     end
   end
 end
 
-# avoid concurrent access to the same index
+# A unique prefix for your test run in local or CI
+SAFE_INDEX_PREFIX = SecureRandom.hex(8).freeze
+
+# avoid concurrent access to the same index in local or CI
 def safe_index_name(name)
-  return name if ENV['TRAVIS'].to_s != "true"
-  id = ENV['TRAVIS_JOB_NUMBER'].split('.').last
-  "TRAVIS_RAILS_#{name}_#{id}"
+  "#{SAFE_INDEX_PREFIX}_#{name}"
+end
+
+# get a list of safe indexes in local or CI
+def safe_index_list
+  Algolia.client.list_indexes()['items']
+    .select { |index| index["name"].include?(SAFE_INDEX_PREFIX) }
+    .sort_by { |index| index["primary"] || "" }
 end
