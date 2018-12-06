@@ -36,7 +36,7 @@ RSpec.configure do |c|
 end
 
 # A unique prefix for your test run in local or CI
-SAFE_INDEX_PREFIX = SecureRandom.hex(8).freeze
+SAFE_INDEX_PREFIX = "rails_#{SecureRandom.hex(8)}".freeze
 
 # avoid concurrent access to the same index in local or CI
 def safe_index_name(name)
